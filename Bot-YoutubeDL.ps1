@@ -80,8 +80,9 @@ function Send-TelegramMessage {
         chat_id = $ChatId
         text = $Text
     } | ConvertTo-Json
+    $BodyBytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
     try {
-        Invoke-RestMethod -Uri $Url -Method Post -ContentType "application/json" -Body $Body | Out-Null
+        Invoke-RestMethod -Uri $Url -Method Post -ContentType "application/json; charset=utf-8" -Body $BodyBytes | Out-Null
     } catch {
         Write-Log "Erreur envoi message / Error enviant missatge: $_"
     }
@@ -143,7 +144,8 @@ $ProcessDownloadBlock = {
         param ([string]$ChatId, [string]$Text)
         $UrlApi = "$TelegramApiUrl/sendMessage"
         $Body = @{ chat_id = $ChatId; text = $Text } | ConvertTo-Json
-        try { Invoke-RestMethod -Uri $UrlApi -Method Post -ContentType "application/json" -Body $Body | Out-Null } catch { Write-Log "Erreur envoi message : $_" }
+        $BodyBytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
+        try { Invoke-RestMethod -Uri $UrlApi -Method Post -ContentType "application/json; charset=utf-8" -Body $BodyBytes | Out-Null } catch { Write-Log "Erreur envoi message : $_" }
     }
 
     function Send-TelegramFile {
