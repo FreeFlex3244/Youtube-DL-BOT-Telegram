@@ -3,7 +3,9 @@ param (
     [Parameter(Mandatory=$false)]
     [string]$BotToken,
     [Parameter(Mandatory=$false)]
-    [string]$SecurityToken
+    [string]$SecurityToken,
+    [Parameter(Mandatory=$false)]
+    [string]$LocalTelegramApiBaseUrl = "https://api.telegram.org"
 )
 
 # Configuration & Initialization
@@ -68,7 +70,7 @@ if ([string]::IsNullOrEmpty($SecurityToken)) {
 }
 
 # --- Telegram API Helpers ---
-$TelegramApiUrl = "https://api.telegram.org/bot$BotToken"
+$TelegramApiUrl = "$LocalTelegramApiBaseUrl/bot$BotToken"
 
 function Send-TelegramMessage {
     param (
@@ -100,8 +102,8 @@ function Send-TelegramFile {
     }
 
     $FileInfo = Get-Item $FilePath
-    if ($FileInfo.Length -gt 50MB) {
-        Send-TelegramMessage -ChatId $ChatId -Text "⚠️ Fichier trop volumineux (>50MB) pour etre envoye par Telegram (limite de bot) / Fitxer massa gran (>50MB).`nTaille / Mida: $([math]::Round($FileInfo.Length / 1MB, 2)) MB"
+    if ($FileInfo.Length -gt 5GB) {
+        Send-TelegramMessage -ChatId $ChatId -Text "⚠️ Fichier trop volumineux (>5Go) pour etre envoye par Telegram (limite de serveur local) / Fitxer massa gran (>5Go).`nTaille / Mida: $([math]::Round($FileInfo.Length / 1GB, 2)) GB"
         return
     }
 
@@ -111,14 +113,32 @@ function Send-TelegramFile {
     # Using curl.exe for multipart/form-data upload which is built-in Windows 10+
     $CurlArgs = @(
         "-s",
+        "-w", "%{http_code}",
         "-X", "POST",
         $Url,
         "-F", "chat_id=$ChatId",
         "-F", "$Type=@$FilePath"
     )
 
-    $Result = & curl.exe $CurlArgs 2>&1
-    Write-Log "Resultat curl: $Result"
+    $Output = & curl.exe $CurlArgs 2>&1
+    $OutputString = $Output -join ""
+
+    # The last 3 characters of curl output with -w "%{http_code}" will be the HTTP status code
+    if ($OutputString.Length -ge 3) {
+        $StatusCode = $OutputString.Substring($OutputString.Length - 3)
+        $ResponseBody = $OutputString.Substring(0, $OutputString.Length - 3)
+
+        Write-Log "Resultat curl (HTTP $StatusCode): $ResponseBody"
+
+        if ($StatusCode -match "^2\d\d$") {
+            return $true
+        } else {
+            Write-Log "Erreur d'envoi Telegram. / Error d'enviament a Telegram."
+            return $false
+        }
+    }
+
+    return $false
 }
 
 $ProcessDownloadBlock = {
@@ -148,15 +168,25 @@ $ProcessDownloadBlock = {
 
     function Send-TelegramFile {
         param ([string]$ChatId, [string]$FilePath, [string]$Type = "document")
-        if (!(Test-Path $FilePath)) { return }
+        if (!(Test-Path $FilePath)) { return $false }
         $FileInfo = Get-Item $FilePath
-        if ($FileInfo.Length -gt 50MB) {
-            Send-TelegramMessage -ChatId $ChatId -Text "⚠️ Fichier trop volumineux (>50MB) pour etre envoye par Telegram / Fitxer massa gran.`nTaille / Mida: $([math]::Round($FileInfo.Length / 1MB, 2)) MB"
-            return
+        if ($FileInfo.Length -gt 5GB) {
+            Send-TelegramMessage -ChatId $ChatId -Text "⚠️ Fichier trop volumineux (>5Go) pour etre envoye par Telegram / Fitxer massa gran (>5Go).`nTaille / Mida: $([math]::Round($FileInfo.Length / 1GB, 2)) GB"
+            return $false
         }
         $UrlApi = "$TelegramApiUrl/send$Type"
-        $CurlArgs = @("-s", "-X", "POST", $UrlApi, "-F", "chat_id=$ChatId", "-F", "$Type=@$FilePath")
-        & curl.exe $CurlArgs 2>&1 | Out-Null
+        $CurlArgs = @("-s", "-w", "%{http_code}", "-X", "POST", $UrlApi, "-F", "chat_id=$ChatId", "-F", "$Type=@$FilePath")
+
+        $Output = & curl.exe $CurlArgs 2>&1
+        $OutputString = $Output -join ""
+
+        if ($OutputString.Length -ge 3) {
+            $StatusCode = $OutputString.Substring($OutputString.Length - 3)
+            if ($StatusCode -match "^2\d\d$") {
+                return $true
+            }
+        }
+        return $false
     }
 
     function Get-YtDlpFormatArg {
@@ -197,8 +227,14 @@ $ProcessDownloadBlock = {
                 Send-TelegramMessage -ChatId $ChatId -Text "✅ Fichier telecharge! Envoi en cours... / Fitxer descarregat! Enviant..."
                 $Type = "document"
                 if ($File -match "\.mp4$") { $Type = "video" } elseif ($File -match "\.mp3$") { $Type = "audio" }
-                Send-TelegramFile -ChatId $ChatId -FilePath $File -Type $Type
-                Remove-Item -Path $File -Force -ErrorAction SilentlyContinue
+
+                $UploadSuccess = Send-TelegramFile -ChatId $ChatId -FilePath $File -Type $Type
+
+                if ($UploadSuccess) {
+                    Remove-Item -Path $File -Force -ErrorAction SilentlyContinue
+                } else {
+                    Send-TelegramMessage -ChatId $ChatId -Text "❌ Erreur lors de l'envoi a Telegram (fichier trop gros ?). Le fichier a ete conserve sur le serveur. / Error en l'enviament a Telegram (fitxer massa gran?). El fitxer s'ha desat al servidor local."
+                }
             }
         } else {
             Send-TelegramMessage -ChatId $ChatId -Text "❌ Le telechargement a reussi, mais aucun nouveau fichier trouve / Descarrega completada pero no s'ha trobat el fitxer."
