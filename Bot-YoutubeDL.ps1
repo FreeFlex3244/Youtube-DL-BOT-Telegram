@@ -166,6 +166,17 @@ $ProcessDownloadBlock = {
         & curl.exe $CurlArgs 2>&1 | Out-Null
     }
 
+    function Get-YtDlpFormatArg {
+        param ([string]$Cmd)
+        $DefaultFormat = "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+        switch ($Cmd) {
+            "/max" { return "bestvideo+bestaudio/best" }
+            "/1080p" { return $DefaultFormat }
+            "/audio" { return "bestaudio/best" }
+            Default { return $DefaultFormat }
+        }
+    }
+
     $Format = Get-YtDlpFormatArg -Cmd $Command
     $OutputTemplate = Join-Path -Path $DownloadsDir -ChildPath "%(title)s.%(ext)s"
 
