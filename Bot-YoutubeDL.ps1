@@ -131,8 +131,13 @@ $ProcessDownloadBlock = {
         [string]$DownloadsDir,
         [string]$ToolsDir,
         [string]$YtDlpPath,
-        [string]$TelegramApiUrl
+        [string]$TelegramApiUrl,
+        [string]$GetYtDlpFormatArgPath
     )
+
+    if (Test-Path $GetYtDlpFormatArgPath) {
+        . $GetYtDlpFormatArgPath
+    }
 
     function Write-Log {
         param([string]$Message)
@@ -159,16 +164,6 @@ $ProcessDownloadBlock = {
         $UrlApi = "$TelegramApiUrl/send$Type"
         $CurlArgs = @("-s", "-X", "POST", $UrlApi, "-F", "chat_id=$ChatId", "-F", "$Type=@$FilePath")
         & curl.exe $CurlArgs 2>&1 | Out-Null
-    }
-
-    function Get-YtDlpFormatArg {
-        param ([string]$Cmd)
-        switch ($Cmd) {
-            "/max" { return "bestvideo+bestaudio/best" }
-            "/1080p" { return "bestvideo[height<=1080]+bestaudio/best[height<=1080]" }
-            "/audio" { return "bestaudio/best" }
-            Default { return "bestvideo[height<=1080]+bestaudio/best[height<=1080]" }
-        }
     }
 
     $Format = Get-YtDlpFormatArg -Cmd $Command
@@ -294,7 +289,8 @@ while ($true) {
                             $DownloadsDir,
                             $ToolsDir,
                             $YtDlpPath,
-                            $TelegramApiUrl
+                            $TelegramApiUrl,
+                            (Join-Path -Path $WorkingDir -ChildPath "Get-YtDlpFormatArg.ps1")
                         )
                         Write-Log "Execution command: $Command $UrlTarget"
                         Start-Job -ScriptBlock $ProcessDownloadBlock -ArgumentList $JobArgs | Out-Null
