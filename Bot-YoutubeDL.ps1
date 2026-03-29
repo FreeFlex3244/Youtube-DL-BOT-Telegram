@@ -131,8 +131,13 @@ $ProcessDownloadBlock = {
         [string]$DownloadsDir,
         [string]$ToolsDir,
         [string]$YtDlpPath,
-        [string]$TelegramApiUrl
+        [string]$TelegramApiUrl,
+        [string]$GetYtDlpFormatArgPath
     )
+
+    if (Test-Path $GetYtDlpFormatArgPath) {
+        . $GetYtDlpFormatArgPath
+    }
 
     function Write-Log {
         param([string]$Message)
@@ -295,7 +300,8 @@ while ($true) {
                             $DownloadsDir,
                             $ToolsDir,
                             $YtDlpPath,
-                            $TelegramApiUrl
+                            $TelegramApiUrl,
+                            (Join-Path -Path $WorkingDir -ChildPath "Get-YtDlpFormatArg.ps1")
                         )
                         Write-Log "Execution command: $Command $UrlTarget"
                         Start-Job -ScriptBlock $ProcessDownloadBlock -ArgumentList $JobArgs | Out-Null
